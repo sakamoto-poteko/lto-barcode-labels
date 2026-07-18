@@ -4,8 +4,8 @@
 #
 # Generates LTO barcode label sheets using main.py.
 #
-# By default this produces the first-page (30-label) sheets for the BK, DK,
-# and SV prefixes on LTO-6 media, matching the LTO Barcode Label
+# By default this produces the first-page (30-label) sheets for the SV, TP,
+# DK, and BK prefixes on LTO-6 media, matching the revised label
 # Specification. Override any of the variables below via environment
 # variables, e.g.:
 #
@@ -21,9 +21,8 @@ if [ -f ".venv/bin/activate" ]; then
   source .venv/bin/activate
 fi
 
-PREFIXES=("${PREFIXES_OVERRIDE:-BK DK SV}")
-# Allow PREFIXES_OVERRIDE="BK DK SV EXTRA" to expand to multiple words.
-read -r -a PREFIXES <<< "${PREFIXES_OVERRIDE:-BK DK SV}"
+# Allow PREFIXES_OVERRIDE="SV TP DK BK" to expand to multiple words.
+read -r -a PREFIXES <<< "${PREFIXES_OVERRIDE:-SV TP DK BK}"
 
 GENERATION="${GENERATION:-6}"
 START="${START:-1}"

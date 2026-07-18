@@ -1,24 +1,25 @@
 # backuplabel
 
-Generate print-ready Code 39 barcode label sheets for LTO tape cartridges
-(LTO-5 through LTO-8, Data and WORM), compatible with IBM/Dell TL2000/TL4000,
-HP MSL, Quantum, and similar tape libraries.
+Generate print-ready Code 39 barcode label sheets for IBM LTO-6 cartridges and
+Dell TL2000 libraries.
 
-> Vibe-coded in an interactive pair-programming session between the repo
-> owner and the Zoo AI coding agent (Claude Sonnet).
+> Vibe-coded in interactive pair-programming sessions between the repo owner
+> and Zoo AI coding agents using multiple AI models.
 
 Labels follow the LTO barcode conventions:
 
-- **Label size:** 67.5 mm × 17.0 mm, square corners
+- **Label size:** 79.0 mm × 17.0 mm; each black cutter boundary extends to the
+  physical paper edges in both directions
 - **Symbology:** Code 39, no check digit, standard start/stop
-- **Bar height:** 8.0 mm, narrow bar 0.25 mm (10 mil), 3:1 wide:narrow ratio
-- **Quiet zone:** 3.5 mm (above the 2.5 mm spec minimum, for extra scanner tolerance)
-- **Data format:** exactly 8 visible characters, `VVVVVVMT`
-  (6-character VOLSER + 2-character media suffix)
-- **Media suffix** is derived automatically from the LTO generation you choose
-  (`L5/LV`, `L6/LW`, `L7/LX`, `L8/LY`) — it cannot be typed directly.
-- **VOLSER characters** are restricted to `A-Z` / `0-9` (no lowercase, spaces,
-  or punctuation).
+- **Bar geometry:** 11.2 mm high, 0.432 mm narrow element, 2.75:1 ratio
+- **Barcode width:** approximately 74.05 mm including 4.3 mm quiet zones
+- **Data format:** exactly `PPNNNNL6`
+- **Pools:** `SV` (Surveillance), `TP` (Temporary), `DK` (Disks), and `BK`
+  (Backups)
+- **Human-readable strip:** isolated below the barcode, with a pool-colored
+  prefix, four separately colored digit cells, and a neutral `L6` cell
+- **Zero treatment:** light cyan `#8ECAD6` with black text and white separation,
+  preventing repeated zeroes from becoming a dark visual mass
 
 ## Requirements
 
@@ -49,8 +50,8 @@ python3 main.py -p BK -g 6 -s 1 -d 4 -n 30 -o output/pdf/BK_L6_page1.pdf
 
 ## Batch generation script
 
-[`generate_labels.sh`](generate_labels.sh) generates the first-page (30-label)
-sheets for the `BK`, `DK`, and `SV` prefixes on LTO-6 media by default:
+[`generate_labels.sh`](generate_labels.sh) generates first-page (30-label)
+sheets for all four supported prefixes on LTO-6 media by default:
 
 ```bash
 ./generate_labels.sh
@@ -59,8 +60,23 @@ sheets for the `BK`, `DK`, and `SV` prefixes on LTO-6 media by default:
 Override any parameter via environment variables:
 
 ```bash
-GENERATION=7 DIGITS=5 COUNT=60 PREFIXES_OVERRIDE="BK DK SV EXTRA" ./generate_labels.sh
+START=31 COUNT=60 PREFIXES_OVERRIDE="BK SV" ./generate_labels.sh
 ```
+
+## Required samples
+
+Generate one-label sample sheets with:
+
+```bash
+for prefix in SV TP DK BK; do
+  .venv/bin/python main.py -p "$prefix" -g 6 -s 1 -n 1 \
+    -o "output/samples/${prefix}0001L6.pdf"
+done
+```
+
+The resulting PDFs are `SV0001L6`, `TP0001L6`, `DK0001L6`, and `BK0001L6`.
+Print PDFs at **100% / Actual Size** on matte white polyester stock; disable
+printer scaling and do not laminate.
 
 ## Font
 

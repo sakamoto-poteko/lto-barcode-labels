@@ -4,7 +4,7 @@ import re
 from pathlib import Path
 
 from reportlab.graphics.barcode.code39 import Standard39
-from reportlab.lib.colors import Color, black
+from reportlab.lib.colors import HexColor, black, white
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm
 from reportlab.pdfbase import pdfmetrics
@@ -17,30 +17,48 @@ DEFAULT_OUTPUT = Path("output/pdf/labels.pdf")
 # ---------------------------------------------------------------------------
 # Layout configuration
 # ---------------------------------------------------------------------------
-LABEL_WIDTH = 67.5 * mm
+# Revised IBM/Dell LTO-6 label geometry.  All dimensions remain in points
+# internally, but are declared in millimetres so the PDF prints at exact size.
+LABEL_WIDTH = 79.0 * mm
 LABEL_HEIGHT = 17.0 * mm
-BAR_HEIGHT = 8.0 * mm
-NARROW_BAR = 0.254 * mm  # 10 mil
+BAR_HEIGHT = 11.2 * mm  # exceeds the 11.1 mm minimum
+NARROW_BAR = 0.432 * mm  # 17 mil nominal (IBM spec, not 10 mil)
+WIDE_NARROW_RATIO = 2.75
+QUIET_ZONE = 4.3 * mm
+BARCODE_TOP_MARGIN = 0.2 * mm
 
-# Spec minimum is 2.5 mm. We use a larger value to give scanners extra
-# tolerance/safety margin while still fitting comfortably inside the
-# 67.5 mm label width (verified at draw time, see draw_label()).
-QUIET_ZONE = 3.5 * mm
+# The strip is wholly below the bars: bars end at 5.6 mm, while the strip
+# ends at 5.0 mm.  This gives a 0.6 mm clear horizontal gap.
+STRIP_BOTTOM = 0.5 * mm
+STRIP_HEIGHT = 4.5 * mm
+PREFIX_CELL_WIDTH = 7.5 * mm
+DIGIT_CELL_WIDTH = 4.5 * mm
+MEDIA_CELL_WIDTH = 7.5 * mm
+CELL_GAP = 2.5 * mm
+PREFIX_GAP = 4.5 * mm
+MEDIA_GAP = 4.5 * mm
+MEDIA_BORDER_WIDTH = 0.12 * mm
+LABEL_GUIDE_COLOR = black
+LABEL_GUIDE_WIDTH = 0.10 * mm
 
+# Labels are cut consecutively from a continuous strip, not individually,
+# so there is no gap between adjacent labels in either direction.
 COLS = 2
 ROWS = 15
-H_GAP = 10.0 * mm
-V_GAP = 1.0 * mm
+H_GAP = 0.0 * mm
+V_GAP = 0.0 * mm
 LABELS_PER_PAGE = COLS * ROWS
 
 # ---------------------------------------------------------------------------
 # Data-format configuration
 # ---------------------------------------------------------------------------
-# Total visible characters must always be exactly 8: VVVVVVMT
-# (6-char VOLSER + 2-char media suffix).
+# Total visible characters must always be exactly 8: PPNNNNL6.
 TOTAL_VISIBLE_CHARS = 8
 MEDIA_SUFFIX_LEN = 2
 VOLSER_LEN = TOTAL_VISIBLE_CHARS - MEDIA_SUFFIX_LEN  # 6
+SERIAL_DIGITS = 4
+MEDIA_SUFFIX = "L6"
+SUPPORTED_PREFIXES = {"SV", "TP", "DK", "BK"}
 
 # VOLSER characters (prefix + zero-padded number) may only be A-Z / 0-9.
 VOLSER_CHAR_RE = re.compile(r"^[A-Z0-9]+$")
@@ -48,12 +66,7 @@ VOLSER_CHAR_RE = re.compile(r"^[A-Z0-9]+$")
 # Media suffix is derived from the LTO generation number; the user may not
 # type an arbitrary suffix directly, only the generation (and optional
 # WORM flag). index 0 = Data cartridge, index 1 = WORM.
-GENERATION_SUFFIXES: dict[int, tuple[str, str]] = {
-    5: ("L5", "LV"),
-    6: ("L6", "LW"),
-    7: ("L7", "LX"),
-    8: ("L8", "LY"),
-}
+GENERATION_SUFFIXES: dict[int, tuple[str, str]] = {6: (MEDIA_SUFFIX, MEDIA_SUFFIX)}
 
 # ---------------------------------------------------------------------------
 # Font embedding (Monaco, regular weight only - macOS has no Monaco-Bold)
@@ -71,7 +84,7 @@ def register_fonts() -> None:
     Falls back to the built-in Courier font if Monaco isn't available on
     this system, so label generation still succeeds elsewhere.
     """
-    global NUMBER_FONT, _fonts_registered
+    global NUMBER_FONT, PREFIX_FONT, MEDIA_FONT, _fonts_registered
     if _fonts_registered:
         return
     for candidate in _MONACO_TTF_CANDIDATES:
@@ -81,30 +94,46 @@ def register_fonts() -> None:
             break
     else:
         NUMBER_FONT = "Courier"
+    PREFIX_FONT = NUMBER_FONT
+    MEDIA_FONT = NUMBER_FONT
     _fonts_registered = True
 
 
 # ---------------------------------------------------------------------------
 # Text style configuration
 # ---------------------------------------------------------------------------
-TEXT_FONT_SIZE = 8.5      # prefix / media font size
-NUMBER_FONT_SIZE = 12.0   # numbers are the primary read, so make them larger
+TEXT_FONT_SIZE = 14.0
+NUMBER_FONT_SIZE = 14.0
 
-# Prefix: bold sans-serif in a distinct color so it's easily told apart
-# from the number even though it's already alphabetic.
-PREFIX_FONT = "Helvetica-Bold"
-PREFIX_COLOR = Color(0.05, 0.25, 0.55)  # dark blue
+# The complete human-readable identifier uses the existing selected Monaco
+# face (or the same Courier fallback) for consistent optical centring.
+PREFIX_FONT = NUMBER_FONT
+PREFIX_COLORS = {
+    "SV": HexColor("#B71C1C"),
+    "TP": HexColor("#EF6C00"),
+    "DK": HexColor("#1565C0"),
+    "BK": HexColor("#2E7D32"),
+}
 
 # Number: fixed-width font, larger size, black - the main identifier at a
 # glance, so digits always line up and stand out from prefix/media text.
 # NUMBER_FONT itself is set by register_fonts() (embedded Monaco or a
 # Courier fallback).
-NUMBER_COLOR = black
+DIGIT_STYLES = {
+    "0": (HexColor("#8ECAD6"), black),
+    "1": (HexColor("#D95C5C"), white),
+    "2": (HexColor("#5FAE6B"), white),
+    "3": (HexColor("#5B86C5"), white),
+    "4": (HexColor("#D99045"), black),
+    "5": (HexColor("#8A6BBE"), white),
+    "6": (HexColor("#4F9C9C"), white),
+    "7": (HexColor("#D6B94C"), black),
+    "8": (HexColor("#8A8A8A"), white),
+    "9": (HexColor("#E5B4C2"), black),
+}
 
-# Media label (e.g. "L6"): distinct color so it's clearly told apart from
-# the numeric portion of the code.
-MEDIA_FONT = "Helvetica-Bold"
-MEDIA_COLOR = Color(0.72, 0.30, 0.05)  # burnt orange
+MEDIA_FONT = NUMBER_FONT
+MEDIA_BORDER_COLOR = HexColor("#D7D7D7")
 
 
 def parse_args() -> argparse.Namespace:
@@ -114,22 +143,20 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "-p", "--prefix",
         required=True,
-        help="Label prefix, e.g. BK for Backup, DK for Disk, SV for Surveillance "
-             "(A-Z/0-9 only; prefix length + --digits must equal 6)",
+        choices=sorted(SUPPORTED_PREFIXES),
+        help="Two-letter pool prefix: SV, TP, DK, or BK",
     )
     parser.add_argument(
         "-g", "--generation",
         type=int,
         required=True,
-        choices=sorted(GENERATION_SUFFIXES),
-        help="LTO generation number: 5, 6, 7, or 8. The media suffix "
-             "(e.g. L6/LW) is derived automatically, not typed directly.",
+        choices=[6],
+        help="LTO generation number (this design supports LTO-6)",
     )
     parser.add_argument(
         "--worm",
         action="store_true",
-        help="Use the WORM media suffix instead of the Data suffix "
-             "for the chosen generation.",
+        help=argparse.SUPPRESS,
     )
     parser.add_argument(
         "-s", "--start",
@@ -140,8 +167,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "-d", "--digits",
         type=int,
-        required=True,
-        help="Zero-padded width of the number, e.g. 4 -> 0001",
+        default=SERIAL_DIGITS,
+        choices=[SERIAL_DIGITS],
+        help="Serial width (fixed at 4; default: 4)",
     )
     parser.add_argument(
         "-n", "--count",
@@ -173,7 +201,12 @@ def validate_label_format(prefix: str, digits: int) -> str:
             f"Invalid prefix {prefix!r}: VOLSER may only contain A-Z and 0-9 "
             "(no lowercase, spaces, or punctuation)."
         )
-    if len(normalized) + digits != VOLSER_LEN:
+    if normalized not in SUPPORTED_PREFIXES:
+        raise SystemExit(
+            f"Unsupported prefix {normalized!r}; choose one of "
+            f"{', '.join(sorted(SUPPORTED_PREFIXES))}."
+        )
+    if len(normalized) != 2 or digits != SERIAL_DIGITS:
         raise SystemExit(
             f"Invalid format: prefix ({len(normalized)} chars) + digits "
             f"({digits}) must total exactly {VOLSER_LEN} characters "
@@ -204,6 +237,83 @@ def format_value(number: int, prefix: str, media: str, digits: int) -> tuple[str
     return prefix, number_str, media
 
 
+def _draw_centered_text(
+    canvas: Canvas,
+    text: str,
+    center_x: float,
+    cell_y: float,
+    cell_height: float,
+    font: str,
+    size: float,
+    color,
+) -> None:
+    """Draw text optically centred in a fixed-height cell."""
+    # These labels contain only capitals and digits.  Centre their visible
+    # cap-height rather than the full font em-box (which includes invisible
+    # ascender/descender allowance and makes glyphs look vertically offset).
+    # A 0.70 em cap-height matches Helvetica/Courier/Monaco closely and avoids
+    # relying on backend-specific font-face internals.
+    cap_height = size * 0.70
+    baseline = cell_y + (cell_height - cap_height) / 2
+    canvas.setFont(font, size)
+    canvas.setFillColor(color)
+    canvas.drawCentredString(center_x, baseline, text)
+
+
+def draw_human_readable_strip(
+    canvas: Canvas,
+    x: float,
+    y: float,
+    prefix: str,
+    number_str: str,
+    media: str,
+) -> None:
+    """Render PP | N | N | N | N | L6 below the barcode only."""
+    strip_width = (
+        PREFIX_CELL_WIDTH
+        + len(number_str) * DIGIT_CELL_WIDTH
+        + (len(number_str) - 1) * CELL_GAP
+        + PREFIX_GAP
+        + MEDIA_GAP
+        + MEDIA_CELL_WIDTH
+    )
+    # Centre the complete identifier as one unit within the physical label;
+    # each glyph is then independently centred within its own cell.
+    cell_x = x + (LABEL_WIDTH - strip_width) / 2
+    cell_y = y + STRIP_BOTTOM
+
+    canvas.saveState()
+    canvas.setFillColor(PREFIX_COLORS[prefix])
+    canvas.rect(cell_x, cell_y, PREFIX_CELL_WIDTH, STRIP_HEIGHT, stroke=0, fill=1)
+    _draw_centered_text(
+        canvas, prefix, cell_x + PREFIX_CELL_WIDTH / 2, cell_y, STRIP_HEIGHT,
+        PREFIX_FONT, TEXT_FONT_SIZE, white,
+    )
+    cell_x += PREFIX_CELL_WIDTH + PREFIX_GAP
+
+    for digit in number_str:
+        background, foreground = DIGIT_STYLES[digit]
+        canvas.setFillColor(background)
+        canvas.rect(cell_x, cell_y, DIGIT_CELL_WIDTH, STRIP_HEIGHT, stroke=0, fill=1)
+        _draw_centered_text(
+            canvas, digit, cell_x + DIGIT_CELL_WIDTH / 2, cell_y, STRIP_HEIGHT,
+            NUMBER_FONT, NUMBER_FONT_SIZE, foreground,
+        )
+        cell_x += DIGIT_CELL_WIDTH + CELL_GAP
+
+    # Replace the ordinary post-digit separator with the larger media gap.
+    cell_x += MEDIA_GAP - CELL_GAP
+    canvas.setFillColor(white)
+    canvas.setStrokeColor(MEDIA_BORDER_COLOR)
+    canvas.setLineWidth(MEDIA_BORDER_WIDTH)
+    canvas.rect(cell_x, cell_y, MEDIA_CELL_WIDTH, STRIP_HEIGHT, stroke=1, fill=1)
+    _draw_centered_text(
+        canvas, media, cell_x + MEDIA_CELL_WIDTH / 2, cell_y, STRIP_HEIGHT,
+        MEDIA_FONT, TEXT_FONT_SIZE, black,
+    )
+    canvas.restoreState()
+
+
 def draw_label(
     canvas: Canvas,
     x: float,
@@ -216,11 +326,11 @@ def draw_label(
     prefix, number_str, media = format_value(number, prefix, media, digits)
     barcode_value = f"{prefix}{number_str}{media}"
 
-    # A very light exact-size cutting guide; the barcode itself is pure black.
+    # Paint the exact label area white.  Cutter lines are drawn page-wide by
+    # draw_cutting_grid(), rather than stopping at individual label corners.
     canvas.saveState()
-    canvas.setStrokeColor(Color(0.78, 0.78, 0.78))
-    canvas.setLineWidth(0.2)
-    canvas.rect(x, y, LABEL_WIDTH, LABEL_HEIGHT, stroke=1, fill=0)
+    canvas.setFillColor(white)
+    canvas.rect(x, y, LABEL_WIDTH, LABEL_HEIGHT, stroke=0, fill=1)
     canvas.restoreState()
 
     barcode = Standard39(
@@ -230,7 +340,7 @@ def draw_label(
         humanReadable=0,
         barWidth=NARROW_BAR,
         barHeight=BAR_HEIGHT,
-        ratio=3.0,
+        ratio=WIDE_NARROW_RATIO,
         quiet=1,
         lquiet=QUIET_ZONE,
         rquiet=QUIET_ZONE,
@@ -244,39 +354,32 @@ def draw_label(
         )
 
     barcode_x = x + (LABEL_WIDTH - barcode.width) / 2
-    barcode_y = y + LABEL_HEIGHT - 1.5 * mm - BAR_HEIGHT
+    barcode_y = y + LABEL_HEIGHT - BARCODE_TOP_MARGIN - BAR_HEIGHT
     barcode.drawOn(canvas, barcode_x, barcode_y)
 
-    # Human-readable text, drawn as three separately styled segments
-    # (prefix / number / media) so each part can use its own font and
-    # color while still lining up as one continuous, centered string.
+    draw_human_readable_strip(canvas, x, y, prefix, number_str, media)
+
+
+def draw_cutting_grid(
+    canvas: Canvas,
+    left: float,
+    bottom: float,
+    page_width: float,
+    page_height: float,
+) -> None:
+    """Extend every label boundary to the physical edges of the paper."""
     canvas.saveState()
+    canvas.setStrokeColor(LABEL_GUIDE_COLOR)
+    canvas.setLineWidth(LABEL_GUIDE_WIDTH)
+    canvas.setDash([])
 
-    w_prefix = canvas.stringWidth(prefix, PREFIX_FONT, TEXT_FONT_SIZE)
-    w_number = canvas.stringWidth(number_str, NUMBER_FONT, NUMBER_FONT_SIZE)
-    w_media = canvas.stringWidth(media, MEDIA_FONT, TEXT_FONT_SIZE)
-    total_width = w_prefix + w_number + w_media
+    for col in range(COLS + 1):
+        guide_x = left + col * LABEL_WIDTH
+        canvas.line(guide_x, 0, guide_x, page_height)
 
-    text_x = x + (LABEL_WIDTH - total_width) / 2
-    # Baselines are offset slightly so the larger number text stays
-    # visually centered against the smaller prefix/media text.
-    base_y = y + 3.7 * mm
-    small_y = base_y
-    large_y = base_y - (NUMBER_FONT_SIZE - TEXT_FONT_SIZE) * 0.22
-
-    canvas.setFont(PREFIX_FONT, TEXT_FONT_SIZE)
-    canvas.setFillColor(PREFIX_COLOR)
-    canvas.drawString(text_x, small_y, prefix)
-    text_x += w_prefix
-
-    canvas.setFont(NUMBER_FONT, NUMBER_FONT_SIZE)
-    canvas.setFillColor(NUMBER_COLOR)
-    canvas.drawString(text_x, large_y, number_str)
-    text_x += w_number
-
-    canvas.setFont(MEDIA_FONT, TEXT_FONT_SIZE)
-    canvas.setFillColor(MEDIA_COLOR)
-    canvas.drawString(text_x, small_y, media)
+    for row in range(ROWS + 1):
+        guide_y = bottom + row * LABEL_HEIGHT
+        canvas.line(0, guide_y, page_width, guide_y)
 
     canvas.restoreState()
 
@@ -303,7 +406,9 @@ def generate_labels_pdf(
 
     prefix = validate_label_format(prefix, digits)
     validate_number_range(start, count, digits)
-    media = GENERATION_SUFFIXES[generation][1 if worm else 0]
+    if worm:
+        raise SystemExit("WORM media is not supported by the PPNNNNL6 design.")
+    media = MEDIA_SUFFIX
 
     register_fonts()
 
@@ -335,6 +440,7 @@ def generate_labels_pdf(
                 number += 1
                 index += 1
 
+        draw_cutting_grid(canvas, left, bottom, page_width, page_height)
         canvas.showPage()
 
     canvas.save()
