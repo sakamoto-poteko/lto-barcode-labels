@@ -21,15 +21,15 @@ DEFAULT_OUTPUT = Path("output/pdf/labels.pdf")
 # internally, but are declared in millimetres so the PDF prints at exact size.
 LABEL_WIDTH = 79.0 * mm
 LABEL_HEIGHT = 17.0 * mm
-BAR_HEIGHT = 11.2 * mm  # exceeds the 11.1 mm minimum
+BAR_HEIGHT = 11.8 * mm  # fills all space above the human-readable strip
 NARROW_BAR = 0.432 * mm  # 17 mil nominal (IBM spec, not 10 mil)
 WIDE_NARROW_RATIO = 2.75
 QUIET_ZONE = 4.3 * mm
-BARCODE_TOP_MARGIN = 0.2 * mm
+BARCODE_BOTTOM_MARGIN = 0.2 * mm
 
-# The strip is wholly below the bars: bars end at 5.6 mm, while the strip
-# ends at 5.0 mm.  This gives a 0.6 mm clear horizontal gap.
-STRIP_BOTTOM = 0.5 * mm
+# The strip is wholly above the bars. Its bottom meets the top of the bars;
+# no vertical gap is needed between the two regions.
+STRIP_BOTTOM = BARCODE_BOTTOM_MARGIN + BAR_HEIGHT
 STRIP_HEIGHT = 4.5 * mm
 PREFIX_CELL_WIDTH = 7.5 * mm
 DIGIT_CELL_WIDTH = 4.5 * mm
@@ -141,10 +141,15 @@ def parse_args() -> argparse.Namespace:
         description="Generate a sheet of Code 39 barcode labels."
     )
     parser.add_argument(
-        "-p", "--prefix",
+        "-r", "--range",
+        dest="ranges",
+        action="append",
         required=True,
-        choices=sorted(SUPPORTED_PREFIXES),
-        help="Two-letter pool prefix: SV, TP, DK, or BK",
+        metavar="PREFIX:START-END",
+        help=(
+            "Prefix and inclusive number range; repeat to place multiple "
+            "prefixes on the same sheet (for example, -r BK:1-4 -r TP:1-2)"
+        ),
     )
     parser.add_argument(
         "-g", "--generation",
@@ -159,23 +164,11 @@ def parse_args() -> argparse.Namespace:
         help=argparse.SUPPRESS,
     )
     parser.add_argument(
-        "-s", "--start",
-        type=int,
-        required=True,
-        help="First number to use",
-    )
-    parser.add_argument(
         "-d", "--digits",
         type=int,
         default=SERIAL_DIGITS,
         choices=[SERIAL_DIGITS],
         help="Serial width (fixed at 4; default: 4)",
-    )
-    parser.add_argument(
-        "-n", "--count",
-        type=int,
-        required=True,
-        help="Total number of labels to generate, may span multiple pages",
     )
     parser.add_argument(
         "-o", "--output",
@@ -184,6 +177,29 @@ def parse_args() -> argparse.Namespace:
         help=f"Output PDF path (default: {DEFAULT_OUTPUT})",
     )
     return parser.parse_args()
+
+
+def parse_label_ranges(args: argparse.Namespace) -> list[tuple[str, int]]:
+    """Expand CLI ranges into labels, preserving the user's range order."""
+    labels: list[tuple[str, int]] = []
+    range_re = re.compile(r"^([A-Za-z0-9]+):(\d+)-(\d+)$")
+    for value in args.ranges:
+        match = range_re.fullmatch(value)
+        if not match:
+            raise SystemExit(
+                f"Invalid range {value!r}; expected PREFIX:START-END "
+                "(for example, BK:1-4)."
+            )
+        raw_prefix, raw_start, raw_end = match.groups()
+        prefix = validate_label_format(raw_prefix, args.digits)
+        start, end = int(raw_start), int(raw_end)
+        if end < start:
+            raise SystemExit(
+                f"Invalid range {value!r}: END must be greater than or equal to START."
+            )
+        validate_number_range(start, end - start + 1, args.digits)
+        labels.extend((prefix, number) for number in range(start, end + 1))
+    return labels
 
 
 def validate_label_format(prefix: str, digits: int) -> str:
@@ -268,7 +284,7 @@ def draw_human_readable_strip(
     number_str: str,
     media: str,
 ) -> None:
-    """Render PP | N | N | N | N | L6 below the barcode only."""
+    """Render PP | N | N | N | N | L6 above the barcode only."""
     strip_width = (
         PREFIX_CELL_WIDTH
         + len(number_str) * DIGIT_CELL_WIDTH
@@ -354,7 +370,7 @@ def draw_label(
         )
 
     barcode_x = x + (LABEL_WIDTH - barcode.width) / 2
-    barcode_y = y + LABEL_HEIGHT - BARCODE_TOP_MARGIN - BAR_HEIGHT
+    barcode_y = y + BARCODE_BOTTOM_MARGIN
     barcode.drawOn(canvas, barcode_x, barcode_y)
 
     draw_human_readable_strip(canvas, x, y, prefix, number_str, media)
@@ -385,15 +401,13 @@ def draw_cutting_grid(
 
 
 def generate_labels_pdf(
-    prefix: str,
+    labels: list[tuple[str, int]],
     generation: int,
     worm: bool,
-    start: int,
     digits: int,
-    count: int,
     output: Path,
 ) -> Path:
-    """Validate inputs and render a full label sheet PDF.
+    """Validate inputs and render ordered labels to one or more PDF pages.
 
     The media suffix is always derived from `generation` (+ `worm`); the
     caller may never supply an arbitrary suffix directly.
@@ -404,8 +418,11 @@ def generate_labels_pdf(
             f"Supported: {sorted(GENERATION_SUFFIXES)}"
         )
 
-    prefix = validate_label_format(prefix, digits)
-    validate_number_range(start, count, digits)
+    if not labels:
+        raise SystemExit("At least one label is required.")
+    for prefix, number in labels:
+        validate_label_format(prefix, digits)
+        validate_number_range(number, 1, digits)
     if worm:
         raise SystemExit("WORM media is not supported by the PPNNNNL6 design.")
     media = MEDIA_SUFFIX
@@ -420,24 +437,25 @@ def generate_labels_pdf(
     bottom = (page_height - grid_height) / 2
 
     canvas = Canvas(str(output), pagesize=A4, pageCompression=1)
-    canvas.setTitle(f"{prefix} {media} Barcode Labels")
+    canvas.setTitle(f"Mixed-prefix {media} Barcode Labels")
     canvas.setAuthor("OpenAI Codex")
 
-    total_pages = max(1, math.ceil(count / LABELS_PER_PAGE))
-    number = start
+    total_pages = math.ceil(len(labels) / LABELS_PER_PAGE)
 
     for page in range(total_pages):
-        labels_on_this_page = min(LABELS_PER_PAGE, count - page * LABELS_PER_PAGE)
+        page_labels = labels[
+            page * LABELS_PER_PAGE:(page + 1) * LABELS_PER_PAGE
+        ]
 
         index = 0
         for row in range(ROWS):
             y = bottom + (ROWS - 1 - row) * (LABEL_HEIGHT + V_GAP)
             for col in range(COLS):
-                if index >= labels_on_this_page:
+                if index >= len(page_labels):
                     break
                 x = left + col * (LABEL_WIDTH + H_GAP)
+                prefix, number = page_labels[index]
                 draw_label(canvas, x, y, number, prefix, media, digits)
-                number += 1
                 index += 1
 
         draw_cutting_grid(canvas, left, bottom, page_width, page_height)
@@ -450,12 +468,10 @@ def generate_labels_pdf(
 def main() -> None:
     args = parse_args()
     generate_labels_pdf(
-        prefix=args.prefix,
+        labels=parse_label_ranges(args),
         generation=args.generation,
         worm=args.worm,
-        start=args.start,
         digits=args.digits,
-        count=args.count,
         output=args.output,
     )
 

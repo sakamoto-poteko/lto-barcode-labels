@@ -4,12 +4,10 @@
 #
 # Generates LTO barcode label sheets using main.py.
 #
-# By default this produces the first-page (30-label) sheets for the SV, TP,
-# DK, and BK prefixes on LTO-6 media, matching the revised label
-# Specification. Override any of the variables below via environment
-# variables, e.g.:
+# By default this produces one mixed-prefix, 30-label sheet on LTO-6 media.
+# Override any of the variables below via environment variables, e.g.:
 #
-#   GENERATION=7 DIGITS=5 COUNT=60 ./generate_labels.sh
+#   RANGES_OVERRIDE="BK:31-40 SV:31-50" ./generate_labels.sh
 #
 set -euo pipefail
 
@@ -21,27 +19,27 @@ if [ -f ".venv/bin/activate" ]; then
   source .venv/bin/activate
 fi
 
-# Allow PREFIXES_OVERRIDE="SV TP DK BK" to expand to multiple words.
-read -r -a PREFIXES <<< "${PREFIXES_OVERRIDE:-SV TP DK BK}"
+# Ranges are laid out in this order, with each inclusive range sorted from its
+# lowest to highest number.
+read -r -a RANGES <<< "${RANGES_OVERRIDE:-BK:1-4 TP:1-2 SV:1-14 DK:1-10}"
 
 GENERATION="${GENERATION:-6}"
-START="${START:-1}"
 DIGITS="${DIGITS:-4}"
-COUNT="${COUNT:-30}"
 OUTDIR="${OUTDIR:-output/pdf}"
+OUTPUT="${OUTPUT:-${OUTDIR}/mixed_L${GENERATION}_labels.pdf}"
 
 mkdir -p "$OUTDIR"
 
-for prefix in "${PREFIXES[@]}"; do
-  out="${OUTDIR}/${prefix}_L${GENERATION}_page1.pdf"
-  echo "Generating ${out} (prefix=${prefix}, generation=L${GENERATION}, start=${START}, digits=${DIGITS}, count=${COUNT})"
-  python3 main.py \
-    -p "$prefix" \
-    -g "$GENERATION" \
-    -s "$START" \
-    -d "$DIGITS" \
-    -n "$COUNT" \
-    -o "$out"
+range_args=()
+for label_range in "${RANGES[@]}"; do
+  range_args+=(--range "$label_range")
 done
 
-echo "Done. Generated ${#PREFIXES[@]} label sheet(s) in ${OUTDIR}/"
+echo "Generating ${OUTPUT} (generation=L${GENERATION}, ranges=${RANGES[*]})"
+python3 main.py \
+  "${range_args[@]}" \
+  -g "$GENERATION" \
+  -d "$DIGITS" \
+  -o "$OUTPUT"
+
+echo "Done. Generated mixed-prefix label sheet: ${OUTPUT}"

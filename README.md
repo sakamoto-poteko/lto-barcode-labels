@@ -11,12 +11,13 @@ Labels follow the LTO barcode conventions:
 - **Label size:** 79.0 mm × 17.0 mm; each black cutter boundary extends to the
   physical paper edges in both directions
 - **Symbology:** Code 39, no check digit, standard start/stop
-- **Bar geometry:** 11.2 mm high, 0.432 mm narrow element, 2.75:1 ratio
+- **Bar geometry:** 11.8 mm high, 0.432 mm narrow element, 2.75:1 ratio; the
+  taller bars remain inside the existing 79.0 mm × 17.0 mm label boundary
 - **Barcode width:** approximately 74.05 mm including 4.3 mm quiet zones
 - **Data format:** exactly `PPNNNNL6`
 - **Pools:** `SV` (Surveillance), `TP` (Temporary), `DK` (Disks), and `BK`
   (Backups)
-- **Human-readable strip:** isolated below the barcode, with a pool-colored
+- **Human-readable strip:** positioned above the barcode, with a pool-colored
   prefix, four separately colored digit cells, and a neutral `L6` cell
 - **Zero treatment:** light cyan `#8ECAD6` with black text and white separation,
   preventing repeated zeroes from becoming a dark visual mass
@@ -35,23 +36,22 @@ pip install -r requirements.txt
 ## Usage
 
 ```bash
-python3 main.py -p BK -g 6 -s 1 -d 4 -n 30 -o output/pdf/BK_L6_page1.pdf
+python3 main.py -g 6 -d 4 \
+  -r BK:1-4 -r TP:1-2 -r SV:1-14 -r DK:1-10 \
+  -o output/pdf/mixed_L6_labels.pdf
 ```
 
 | Flag | Description |
 | --- | --- |
-| `-p, --prefix` | Label prefix, e.g. `BK`, `DK`, `SV` (A-Z/0-9 only; `len(prefix) + digits` must equal 6) |
-| `-g, --generation` | LTO generation: `5`, `6`, `7`, or `8` |
-| `--worm` | Use the WORM suffix instead of Data for the chosen generation |
-| `-s, --start` | First serial number |
-| `-d, --digits` | Zero-padded width of the serial number |
-| `-n, --count` | Total number of labels to generate (spans multiple pages automatically) |
+| `-r, --range` | Inclusive `PREFIX:START-END` range; repeat to combine prefixes. Ranges retain command-line order and numbers are laid out from low to high. |
+| `-g, --generation` | LTO generation (currently fixed at `6`) |
+| `-d, --digits` | Zero-padded serial width (currently fixed at `4`) |
 | `-o, --output` | Output PDF path |
 
 ## Batch generation script
 
-[`generate_labels.sh`](generate_labels.sh) generates first-page (30-label)
-sheets for all four supported prefixes on LTO-6 media by default:
+[`generate_labels.sh`](generate_labels.sh) generates one 30-label LTO-6 page:
+`BK` 1–4, `TP` 1–2, `SV` 1–14, followed by `DK` 1–10.
 
 ```bash
 ./generate_labels.sh
@@ -60,7 +60,7 @@ sheets for all four supported prefixes on LTO-6 media by default:
 Override any parameter via environment variables:
 
 ```bash
-START=31 COUNT=60 PREFIXES_OVERRIDE="BK SV" ./generate_labels.sh
+RANGES_OVERRIDE="BK:31-40 SV:31-50" ./generate_labels.sh
 ```
 
 ## Required samples
@@ -69,7 +69,7 @@ Generate one-label sample sheets with:
 
 ```bash
 for prefix in SV TP DK BK; do
-  .venv/bin/python main.py -p "$prefix" -g 6 -s 1 -n 1 \
+  .venv/bin/python main.py -g 6 -r "$prefix:1-1" \
     -o "output/samples/${prefix}0001L6.pdf"
 done
 ```
