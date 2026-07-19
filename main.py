@@ -30,15 +30,15 @@ BARCODE_BOTTOM_MARGIN = 0.2 * mm
 # The strip is wholly above the bars. Its bottom meets the top of the bars;
 # no vertical gap is needed between the two regions.
 STRIP_BOTTOM = BARCODE_BOTTOM_MARGIN + BAR_HEIGHT
-STRIP_HEIGHT = 4.5 * mm
-PREFIX_CELL_WIDTH = 7.5 * mm
-DIGIT_CELL_WIDTH = 4.5 * mm
-MEDIA_CELL_WIDTH = 7.5 * mm
-CELL_GAP = 2.5 * mm
+STRIP_HEIGHT = 5.0 * mm
+PREFIX_CELL_WIDTH = 12.0 * mm
+DIGIT_CELL_WIDTH = 8.0 * mm
+MEDIA_CELL_WIDTH = 12.0 * mm
+CELL_GAP = 0.0 * mm
 PREFIX_GAP = 4.5 * mm
 MEDIA_GAP = 4.5 * mm
 MEDIA_BORDER_WIDTH = 0.12 * mm
-LABEL_GUIDE_COLOR = black
+LABEL_GUIDE_COLOR = HexColor("#D7D7D7")
 LABEL_GUIDE_WIDTH = 0.10 * mm
 
 # Labels are cut consecutively from a continuous strip, not individually,
@@ -102,17 +102,17 @@ def register_fonts() -> None:
 # ---------------------------------------------------------------------------
 # Text style configuration
 # ---------------------------------------------------------------------------
-TEXT_FONT_SIZE = 14.0
-NUMBER_FONT_SIZE = 14.0
+TEXT_FONT_SIZE = 16.0
+NUMBER_FONT_SIZE = 16.0
 
 # The complete human-readable identifier uses the existing selected Monaco
 # face (or the same Courier fallback) for consistent optical centring.
 PREFIX_FONT = NUMBER_FONT
 PREFIX_COLORS = {
-    "SV": HexColor("#B71C1C"),
-    "TP": HexColor("#EF6C00"),
-    "DK": HexColor("#1565C0"),
-    "BK": HexColor("#2E7D32"),
+    "SV": HexColor("#EF9A9A"),
+    "TP": HexColor("#FFB74D"),
+    "DK": HexColor("#64B5F6"),
+    "BK": HexColor("#81C784"),
 }
 
 # Number: fixed-width font, larger size, black - the main identifier at a
@@ -120,16 +120,16 @@ PREFIX_COLORS = {
 # NUMBER_FONT itself is set by register_fonts() (embedded Monaco or a
 # Courier fallback).
 DIGIT_STYLES = {
-    "0": (HexColor("#8ECAD6"), black),
-    "1": (HexColor("#D95C5C"), white),
-    "2": (HexColor("#5FAE6B"), white),
-    "3": (HexColor("#5B86C5"), white),
-    "4": (HexColor("#D99045"), black),
-    "5": (HexColor("#8A6BBE"), white),
-    "6": (HexColor("#4F9C9C"), white),
-    "7": (HexColor("#D6B94C"), black),
-    "8": (HexColor("#8A8A8A"), white),
-    "9": (HexColor("#E5B4C2"), black),
+    "0": (HexColor("#E53935"), black),
+    "1": (HexColor("#FDD835"), black),
+    "2": (HexColor("#8BC34A"), black),
+    "3": (HexColor("#4FC3F7"), black),
+    "4": (HexColor("#BDBDBD"), black),
+    "5": (HexColor("#FB8C00"), black),
+    "6": (HexColor("#EC407A"), black),
+    "7": (HexColor("#43A047"), black),
+    "8": (HexColor("#FFB74D"), black),
+    "9": (HexColor("#8E24AA"), black),
 }
 
 MEDIA_FONT = NUMBER_FONT
@@ -303,7 +303,7 @@ def draw_human_readable_strip(
     canvas.rect(cell_x, cell_y, PREFIX_CELL_WIDTH, STRIP_HEIGHT, stroke=0, fill=1)
     _draw_centered_text(
         canvas, prefix, cell_x + PREFIX_CELL_WIDTH / 2, cell_y, STRIP_HEIGHT,
-        PREFIX_FONT, TEXT_FONT_SIZE, white,
+        PREFIX_FONT, TEXT_FONT_SIZE, black,
     )
     cell_x += PREFIX_CELL_WIDTH + PREFIX_GAP
 
