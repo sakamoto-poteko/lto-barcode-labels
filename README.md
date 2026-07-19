@@ -8,8 +8,8 @@ Dell TL2000 libraries.
 
 Labels follow the LTO barcode conventions:
 
-- **Label size:** 79.0 mm × 17.0 mm; each black cutter boundary extends to the
-  physical paper edges in both directions
+- **Label size:** 79.0 mm × 17.0 mm; each light-grey cutter boundary extends to
+  the physical paper edges in both directions
 - **Symbology:** Code 39, no check digit, standard start/stop
 - **Bar geometry:** 11.8 mm high, 0.432 mm narrow element, 2.75:1 ratio; the
   taller bars remain inside the existing 79.0 mm × 17.0 mm label boundary
@@ -17,10 +17,27 @@ Labels follow the LTO barcode conventions:
 - **Data format:** exactly `PPNNNNL6`
 - **Pools:** `SV` (Surveillance), `TP` (Temporary), `DK` (Disks), and `BK`
   (Backups)
-- **Human-readable strip:** positioned above the barcode, with a pool-colored
-  prefix, four separately colored digit cells, and a neutral `L6` cell
-- **Zero treatment:** light cyan `#8ECAD6` with black text and white separation,
-  preventing repeated zeroes from becoming a dark visual mass
+- **Human-readable strip:** positioned above the barcode in 5.0 mm-high cells,
+  with a 12.0 mm pool-prefix cell, four contiguous 8.0 mm digit cells (no gaps),
+  and a 12.0 mm neutral `L6` cell
+- **Text:** 16 pt Monaco (or Courier fallback), rendered in black throughout
+- **Pool colors:** `SV` light red (`#EF9A9A`), `TP` light orange (`#FFB74D`),
+  `DK` light blue (`#64B5F6`), and `BK` light green (`#81C784`)
+
+### IBM digit colors
+
+| Digit | Color | Hex |
+| ---: | --- | --- |
+| 0 | Red | `#E53935` |
+| 1 | Yellow | `#FDD835` |
+| 2 | Light Green | `#8BC34A` |
+| 3 | Light Blue | `#4FC3F7` |
+| 4 | Grey | `#BDBDBD` |
+| 5 | Orange | `#FB8C00` |
+| 6 | Pink | `#EC407A` |
+| 7 | Dark Green | `#43A047` |
+| 8 | Light Orange | `#FFB74D` |
+| 9 | Purple | `#8E24AA` |
 
 ## Requirements
 
